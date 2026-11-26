@@ -9,47 +9,37 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import pandas as pd
 
-from iml_feature_effects import PartialDependence, Roughness, evaluate, get_models, load_bike_sharing
+from iml_feature_effects.data import load_pga_tour, load_wine_quality
+from iml_feature_effects.effects import summarize_effects
+from iml_feature_effects.evaluate import evaluate_gam
+from iml_feature_effects.models import get_gam_models
+from iml_feature_effects.visualization import plot_effects, plot_mse
 
-RESULTS = Path("results")
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "data"
+RESULTS = ROOT / "results"
+ALPHAS = (1000.0, 10.0, 1.0, 0.1, 0.0001)
+REPEATS = 10
 SEED = 0
 
 
-def plot_curves(curves: pd.DataFrame, dataset: str, path: Path) -> None:
-    """One panel per feature, one line per model."""
-    data = curves[curves["dataset"] == dataset]
-    features = data["feature"].unique()
-    fig, axes = plt.subplots(1, len(features), figsize=(4 * len(features), 3.5), squeeze=False)
-    for ax, feature in zip(axes[0], features, strict=True):
-        for model, curve in data[data["feature"] == feature].groupby("model", sort=False):
-            ax.plot(curve["value"], curve["effect"], marker=".", label=model)
-        ax.set_xlabel(feature)
-        ax.set_ylabel("centered partial dependence")
-    axes[0][0].legend()
-    fig.suptitle(dataset)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
 def main() -> None:
-    scores, curves = evaluate(
-        datasets=[(load_bike_sharing(), ["hour", "temp", "humidity"])],
-        models=get_models(seed=SEED),
-        effect=PartialDependence(),
-        properties=[Roughness()],
-        seed=SEED,
-    )
-
-    RESULTS.mkdir(parents=True, exist_ok=True)
-    scores.to_csv(RESULTS / "scores.csv", index=False)
-    curves.to_csv(RESULTS / "curves.csv", index=False)
-    for dataset in curves["dataset"].unique():
-        plot_curves(curves, dataset, RESULTS / f"effects_{dataset}.png")
-    print(scores.to_string(index=False))
+    models = get_gam_models(ALPHAS)
+    for load_dataset in (load_pga_tour, load_wine_quality):
+        dataset = load_dataset(DATA)
+        scores, curves, test_score = evaluate_gam(dataset, models, repeats=REPEATS, seed=SEED)
+        output = RESULTS / dataset.name
+        output.mkdir(parents=True, exist_ok=True)
+        scores.to_csv(output / "scores.csv", index=False)
+        curves.to_csv(output / "curves.csv", index=False)
+        summarize_effects(curves).to_csv(output / "effect_metrics.csv", index=False)
+        pd.DataFrame([test_score]).to_csv(output / "test_score.csv", index=False)
+        plot_mse(scores, output / "mse.png")
+        plot_effects(curves, output / "effects.png")
+        print(scores.groupby(["dataset", "alpha"], sort=False)[["train_mse", "validation_mse"]].mean().to_string())
+        print(f"Saved results to {output}")
 
 
 if __name__ == "__main__":
