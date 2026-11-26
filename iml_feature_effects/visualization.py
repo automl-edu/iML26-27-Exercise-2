@@ -4,20 +4,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def plot_mse(scores: pd.DataFrame, path: Path) -> None:
-    by_alpha = scores.groupby("alpha")
-    fig, ax = plt.subplots(figsize=(7, 4), layout="constrained")
-    for column, label in (("train_mse", "Training"), ("validation_mse", "Validation")):
-        summary = by_alpha[column].agg(["mean", "std"])
-        ax.errorbar(summary.index, summary["mean"], yerr=summary["std"], marker="o", capsize=3, label=label)
-    ax.set_xscale("log")
-    ax.invert_xaxis()
-    ax.set(xlabel="Regularization (alpha)", ylabel="Mean squared error")
-    ax.legend(title="Mean ± 1 SD")
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
 def plot_effects(curves: pd.DataFrame, path: Path) -> None:
     features = curves.groupby("feature", sort=False)
     columns = min(3, len(features))

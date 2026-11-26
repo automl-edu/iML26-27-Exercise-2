@@ -15,7 +15,7 @@ from iml_feature_effects.data import load_pga_tour, load_wine_quality
 from iml_feature_effects.effects import summarize_effects
 from iml_feature_effects.evaluate import evaluate_gam
 from iml_feature_effects.models import get_gam_models
-from iml_feature_effects.visualization import plot_effects, plot_mse
+from iml_feature_effects.visualization import plot_effects
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -30,15 +30,17 @@ def main() -> None:
     for load_dataset in (load_pga_tour, load_wine_quality):
         dataset = load_dataset(DATA)
         scores, curves, test_score = evaluate_gam(dataset, models, repeats=REPEATS, seed=SEED)
+        mse_summary = scores.groupby("alpha", sort=False, as_index=False)[["train_mse", "validation_mse"]].mean()
         output = RESULTS / dataset.name
         output.mkdir(parents=True, exist_ok=True)
         scores.to_csv(output / "scores.csv", index=False)
+        mse_summary.to_csv(output / "mse_summary.csv", index=False)
         curves.to_csv(output / "curves.csv", index=False)
         summarize_effects(curves).to_csv(output / "effect_metrics.csv", index=False)
         pd.DataFrame([test_score]).to_csv(output / "test_score.csv", index=False)
-        plot_mse(scores, output / "mse.png")
         plot_effects(curves, output / "effects.png")
-        print(scores.groupby(["dataset", "alpha"], sort=False)[["train_mse", "validation_mse"]].mean().to_string())
+        print(dataset.name)
+        print(mse_summary.to_string(index=False))
         print(f"Saved results to {output}")
 
 
