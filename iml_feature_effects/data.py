@@ -15,6 +15,7 @@ from sklearn.datasets import fetch_openml
 
 # OpenML downloads are cached here, relative to the current working directory.
 DATA_HOME = Path("data")
+PGA_FEATURES = ["Avg Distance", "Fairway Percentage", "gir", "Average Putts", "Average Scrambling"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class Dataset:
     name: str
     X: pd.DataFrame
     y: pd.Series
+    groups: pd.Series | None = None
 
     @property
     def feature_names(self) -> list[str]:
@@ -51,3 +53,17 @@ def load_bike_sharing(data_home: str | Path = DATA_HOME) -> Dataset:
     X = pd.get_dummies(bunch.data, drop_first=True, dtype=float)
     y = bunch.target.astype(float).rename("count")
     return Dataset(name="bike_sharing", X=X.astype(float), y=y)
+
+
+def load_pga_tour(data_home: Path = DATA_HOME) -> Dataset:
+    target = "Average Score"
+    columns = [*PGA_FEATURES, target, "Player Name"]
+    data = pd.read_csv(data_home / "pga_tour.csv", usecols=columns).dropna()
+    return Dataset(name="pga_tour", X=data[PGA_FEATURES], y=data[target], groups=data["Player Name"])
+
+
+def load_wine_quality(data_home: Path = DATA_HOME) -> Dataset:
+    data = pd.read_csv(data_home / "wine_quality_red.csv")
+    features = data.drop(columns="quality")
+    groups = features.groupby(list(features.columns), sort=False).ngroup()
+    return Dataset(name="wine_quality_red", X=features, y=data["quality"], groups=groups)

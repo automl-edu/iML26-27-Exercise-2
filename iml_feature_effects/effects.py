@@ -107,3 +107,18 @@ class Roughness(EffectProperty):
             return 0.0
         slopes = np.diff(effect / np.ptp(effect)) / np.diff(value / np.ptp(value))
         return float(np.abs(np.diff(slopes)).mean())
+
+
+def summarize_effects(curves: pd.DataFrame) -> pd.DataFrame:
+    keys = ["dataset", "alpha", "feature"]
+    variance = curves.groupby([*keys, "value"])["effect"].var(ddof=0)
+    mean_variance = variance.groupby(level=keys).mean().rename("mean_pdp_variance")
+
+    ordered = curves.sort_values("value")
+    variation = ordered.groupby([*keys, "repeat"])["effect"].agg(
+        total_variation=lambda values: values.diff().abs().sum(),
+        net_change=lambda values: abs(values.iloc[-1] - values.iloc[0]),
+    )
+    variation["excess_variation"] = variation["total_variation"] - variation.pop("net_change")
+    mean_variation = variation.groupby(level=keys).mean().add_prefix("mean_")
+    return mean_variance.to_frame().join(mean_variation).reset_index()
