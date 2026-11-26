@@ -14,9 +14,10 @@ import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import Ridge
 from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import SplineTransformer, StandardScaler
 
 
 class SubsampledRegressor(RegressorMixin, BaseEstimator):
@@ -94,3 +95,7 @@ def get_models(seed: int = 0) -> dict[str, BaseEstimator]:
             random_state=seed,
         ),
     }
+
+
+def get_gam_models(alphas: tuple[float, ...]) -> dict[float, Pipeline]:
+    return {alpha: make_pipeline(SplineTransformer(n_knots=30, degree=3), Ridge(alpha=alpha)) for alpha in alphas}
