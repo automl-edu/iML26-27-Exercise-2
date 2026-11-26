@@ -20,6 +20,7 @@ dist/
 # OpenML dataset cache
 data/*
 !data/.gitkeep
+!data/*.csv
 
 # Experiment results (scripts/run_experiment.py)
 results/*
