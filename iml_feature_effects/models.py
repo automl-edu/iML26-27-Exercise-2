@@ -1,96 +1,38 @@
-"""Models ranging from underfit to overfit.
+"""Regression trees of increasing complexity, from underfit to overfit.
 
-Extend or replace :func:`get_models` with your own models. They may be of the same class (as in
-this example: three MLPs) or of different classes. For every model you have to be able to argue
-*why* it is underfit, well fit or overfit, e.g. with train/test scores, learning curves or the
-model's capacity relative to the amount of training data.
+All models are :class:`~sklearn.tree.DecisionTreeRegressor` with ``min_samples_leaf=1``; only
+``max_depth`` changes. Depth 1 (a single split) cannot represent any of the structure in the data, while
+an unrestricted tree grows until no further split is possible and therefore (nearly) interpolates
+the training set: train :math:`R^2 = 1` unless identical inputs have different targets (on Concrete the
+fully grown trees reach 0.998). Whether a level is under-, well or overfit is argued from the validation curve
+(train vs. test :math:`R^2` over depth) that :mod:`scripts.run_experiment` produces.
+
+Fully grown regression trees are unbalanced, so their depth is typically well above
+:math:`\\log_2 n_{train}`; the actual depth of every fitted tree is recorded to check that the deepest
+levels still differ.
 """
 
 from __future__ import annotations
 
-import warnings
+from sklearn.tree import DecisionTreeRegressor
 
-import numpy as np
-from sklearn.base import BaseEstimator, RegressorMixin, clone
-from sklearn.compose import TransformedTargetRegressor
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+#: Complexity levels; ``None`` means unrestricted depth.
+DEPTHS: tuple[int | None, ...] = (1, 2, 3, 4, 5, 6, 8, 12, 16, None)
 
 
-class SubsampledRegressor(RegressorMixin, BaseEstimator):
-    """Fit ``estimator`` on a random subset of ``n_samples`` training points only.
+def model_name(depth: int | None) -> str:
+    """``3 -> "depth_03"``, ``None -> "depth_full"``; names sort in order of complexity."""
+    return "depth_full" if depth is None else f"depth_{depth:02d}"
 
-    :param estimator: Unfitted regressor.
-    :param n_samples: Number of training points the estimator actually sees.
-    :param random_state: Seed for drawing the subset.
 
-    After fitting, ``X_fit_`` and ``y_fit_`` hold the subset, so the training error can be computed on
-    the points the model actually saw.
+def get_models(depths: tuple[int | None, ...] = DEPTHS, seed: int = 0) -> dict[str, DecisionTreeRegressor]:
+    """Return unfitted trees keyed by :func:`model_name`, in order of increasing complexity.
+
+    ``random_state`` only affects tie-breaking between equally good splits; the experiment overrides it
+    per repetition.
+
+    :param depths: Values of ``max_depth``.
+    :param seed: Default ``random_state`` of every tree.
+    :rtype: dict[str, DecisionTreeRegressor]
     """
-
-    def __init__(self, estimator: BaseEstimator, n_samples: int = 20, random_state: int | None = None):
-        self.estimator = estimator
-        self.n_samples = n_samples
-        self.random_state = random_state
-
-    def fit(self, X, y):
-        rng = np.random.default_rng(self.random_state)
-        idx = rng.choice(len(X), size=min(self.n_samples, len(X)), replace=False)
-        self.X_fit_ = X.iloc[idx] if hasattr(X, "iloc") else X[idx]
-        self.y_fit_ = y.iloc[idx] if hasattr(y, "iloc") else y[idx]
-        self.estimator_ = clone(self.estimator).fit(self.X_fit_, self.y_fit_)
-        return self
-
-    def predict(self, X):
-        return self.estimator_.predict(X)
-
-
-class _QuietMLPRegressor(MLPRegressor):
-    """:class:`MLPRegressor` that does not warn when it stops at ``max_iter`` (intended here)."""
-
-    def fit(self, X, y):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=ConvergenceWarning)
-            return super().fit(X, y)
-
-
-def _mlp(**kwargs) -> TransformedTargetRegressor:
-    """An MLP with standardized inputs and target."""
-    return TransformedTargetRegressor(
-        regressor=make_pipeline(StandardScaler(), _QuietMLPRegressor(**kwargs)),
-        transformer=StandardScaler(),
-    )
-
-
-def get_models(seed: int = 0) -> dict[str, BaseEstimator]:
-    """Return unfitted models, keyed by a unique name used in result tables.
-
-    - ``mlp_underfit``: a single hidden neuron. The model is (up to the output layer) a ReLU of one
-      linear projection of the inputs, far too little capacity for e.g. the bimodal daily rental pattern.
-    - ``mlp_fit``: a moderately sized MLP with early stopping on a validation split.
-    - ``mlp_overfit``: a large MLP without regularization, trained for many epochs on only 20
-      training points, so it can memorize them.
-
-    :param seed: Random seed passed to every model.
-    :return: Mapping from model name to unfitted scikit-learn regressor.
-    :rtype: dict[str, BaseEstimator]
-    """
-    return {
-        "mlp_underfit": _mlp(hidden_layer_sizes=(1,), max_iter=200, random_state=seed),
-        "mlp_fit": _mlp(hidden_layer_sizes=(64, 64), early_stopping=True, max_iter=500, random_state=seed),
-        "mlp_overfit": SubsampledRegressor(
-            # tol=0 and n_iter_no_change=max_iter disable the convergence check, so all epochs run.
-            _mlp(
-                hidden_layer_sizes=(256, 256),
-                alpha=0.0,
-                max_iter=10_000,
-                tol=0.0,
-                n_iter_no_change=10_000,
-                random_state=seed,
-            ),
-            n_samples=20,
-            random_state=seed,
-        ),
-    }
+    return {model_name(d): DecisionTreeRegressor(max_depth=d, min_samples_leaf=1, random_state=seed) for d in depths}
